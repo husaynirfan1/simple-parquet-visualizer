@@ -1,4 +1,4 @@
-# GraphRAG Parquet Visualizer - Artifacts Folder
+# Parquet Visualizer 
 
 This folder is where you should place your GraphRAG Parquet files for visualization in the interactive viewer.
 
