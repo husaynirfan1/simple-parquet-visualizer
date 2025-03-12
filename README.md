@@ -1,6 +1,6 @@
 # Parquet Visualizer 
 
-This folder is where you should place your GraphRAG Parquet files for visualization in the interactive viewer.
+Simple parquet visualizer using html. Preferrably use artifacts folder to input parquet files, but you could easily browse your parquet files too.
 
 ## File Structure
 
