@@ -1,0 +1,1526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphRAG Parquet Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a2e;
+            color: #e6e6e6;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        header {
+            background-color: #16213e;
+            padding: 1rem;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+        }
+        
+        h1 {
+            margin: 0;
+            color: #4cc9f0;
+            font-size: 1.8rem;
+        }
+        
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            width: 280px;
+            background-color: #0f3460;
+            padding: 1rem;
+            overflow-y: auto;
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.2);
+            transition: width 0.3s ease;
+        }
+        
+        .sidebar-toggle {
+            position: absolute;
+            top: 70px;
+            left: 280px;
+            background-color: #0f3460;
+            color: white;
+            border: none;
+            border-radius: 0 5px 5px 0;
+            padding: 5px 10px;
+            cursor: pointer;
+            z-index: 5;
+            transition: left 0.3s ease;
+        }
+        
+        .sidebar.collapsed {
+            width: 0;
+            padding: 0;
+        }
+        
+        .sidebar-toggle.collapsed {
+            left: 0;
+        }
+        
+        .visualization {
+            flex: 1;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        #graph-container {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        .file-input {
+            margin-bottom: 1rem;
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .file-label {
+            display: block;
+            background-color: #4361ee;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            transition: background-color 0.3s;
+            margin-top: 1rem;
+        }
+        
+        .file-label:hover {
+            background-color: #3b55ce;
+        }
+        
+        #file-list {
+            margin-top: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .file-item {
+            background-color: #16213e;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .file-name {
+            font-size: 0.9rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 180px;
+        }
+        
+        .file-remove {
+            background-color: #e71d36;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .section-title {
+            color: #4cc9f0;
+            margin-top: 1.5rem;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+            border-bottom: 1px solid #4cc9f0;
+            padding-bottom: 0.3rem;
+        }
+        
+        .control-group {
+            margin-bottom: 1rem;
+        }
+        
+        .control-label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-size: 0.9rem;
+            color: #bbd0ff;
+        }
+        
+        select, input[type="range"], input[type="color"] {
+            width: 100%;
+            padding: 0.3rem;
+            background-color: #16213e;
+            color: white;
+            border: 1px solid #3a506b;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+        
+        .color-input {
+            display: flex;
+            align-items: center;
+        }
+        
+        input[type="color"] {
+            width: 30px;
+            padding: 0;
+            height: 30px;
+            border: none;
+            background: none;
+        }
+        
+        .color-label {
+            margin-left: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #3a506b;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .toggle-slider {
+            background-color: #4cc9f0;
+        }
+        
+        input:checked + .toggle-slider:before {
+            transform: translateX(26px);
+        }
+        
+        .tooltip {
+            position: absolute;
+            padding: 10px;
+            background-color: #111;
+            color: #fff;
+            border-radius: 5px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.9rem;
+            max-width: 250px;
+            z-index: 100;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        .tooltip-field {
+            margin-bottom: 5px;
+        }
+        
+        .tooltip-label {
+            font-weight: bold;
+            color: #4cc9f0;
+            margin-right: 5px;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #4cc9f0;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .stats-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background-color: rgba(15, 52, 96, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.8rem;
+            z-index: 10;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            transition: opacity 0.3s ease;
+        }
+        
+        .stats-panel.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .status-message {
+            text-align: center;
+            font-size: 1.2rem;
+            color: #4cc9f0;
+            margin-top: 2rem;
+        }
+        
+        .button {
+            background-color: #4361ee;
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            font-size: 0.9rem;
+        }
+        
+        .button:hover {
+            background-color: #3b55ce;
+        }
+        
+        .button-danger {
+            background-color: #e71d36;
+        }
+        
+        .button-danger:hover {
+            background-color: #c01c2e;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+        
+        .info-box {
+            background-color: #16213e;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+        
+        .node {
+            stroke: #fff;
+            stroke-width: 1.5px;
+        }
+        
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+        }
+        
+        .node text {
+            pointer-events: none;
+            font-size: 10px;
+        }
+        
+        .glow {
+            filter: url(#glow);
+        }
+        
+        .zoom-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 10;
+        }
+        
+        .zoom-button {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: rgba(15, 52, 96, 0.8);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            border: none;
+        }
+        
+        .zoom-button:hover {
+            background-color: rgba(67, 97, 238, 0.8);
+        }
+        
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .control-value {
+            font-size: 0.8rem;
+            color: #bbd0ff;
+            min-width: 30px;
+            text-align: right;
+        }
+        
+        .range-with-value {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .range-with-value input[type="range"] {
+            flex: 1;
+        }
+        
+        .pulsating {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(76, 201, 240, 0.4);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(76, 201, 240, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(76, 201, 240, 0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>GraphRAG Parquet Visualizer</h1>
+        </header>
+        
+        <div class="main-content">
+            <button id="sidebar-toggle" class="sidebar-toggle">≡</button>
+            <div id="sidebar" class="sidebar">
+                <div class="file-input">
+                    <div class="section-title">Parquet Files</div>
+                    <input type="file" id="file-input" accept=".parquet,.csv" multiple>
+                    <label for="file-input" class="file-label">Select Parquet Files</label>
+                    <div id="file-list"></div>
+                </div>
+                
+                <div class="section-title">Visual Controls</div>
+                
+                <div class="control-group">
+                    <label class="control-label">Link Distance</label>
+                    <div class="range-with-value">
+                        <input type="range" id="link-distance" min="50" max="300" value="150">
+                        <span id="link-distance-value" class="control-value">150</span>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label class="control-label">Node Charge</label>
+                    <div class="range-with-value">
+                        <input type="range" id="node-charge" min="-1000" max="-50" value="-300">
+                        <span id="node-charge-value" class="control-value">-300</span>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <label class="control-label">Link Strength</label>
+                    <div class="range-with-value">
+                        <input type="range" id="link-strength" min="0" max="1" step="0.1" value="0.5">
+                        <span id="link-strength-value" class="control-value">0.5</span>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-row">
+                        <label class="control-label">Node Size By</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="node-size-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <select id="node-size-property" disabled>
+                        <option value="connections">Connection Count</option>
+                        <option value="equal">Equal Size</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-row">
+                        <label class="control-label">Color By</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="color-by-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <select id="color-by-property">
+                        <option value="type">Node Type</option>
+                        <option value="cluster">Cluster</option>
+                        <option value="random">Random</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-row">
+                        <label class="control-label">Show Labels</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="show-labels-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-row">
+                        <label class="control-label">Curved Links</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="curved-links-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-row">
+                        <label class="control-label">Link Animations</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="link-animation-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="control-group">
+                    <div class="control-row">
+                        <label class="control-label">Glow Effect</label>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="glow-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="section-title">Color Theme</div>
+                
+                <div class="control-group">
+                    <label class="control-label">Node Color Palette</label>
+                    <select id="color-palette">
+                        <option value="default">Default</option>
+                        <option value="pastel">Pastel</option>
+                        <option value="vibrant">Vibrant</option>
+                        <option value="monochrome">Monochrome</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label class="control-label">Background Color</label>
+                    <div class="color-input">
+                        <input type="color" id="bg-color" value="#1a1a2e">
+                        <span class="color-label">#1a1a2e</span>
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button id="reset-view" class="button">Reset View</button>
+                    <button id="export-svg" class="button">Export SVG</button>
+                    <button id="clear-demo" class="button button-danger">Clear Demo Data</button>
+                </div>
+                
+                <div class="info-box">
+                    <strong>Tips:</strong>
+                    <ul>
+                        <li>Drag nodes to reposition</li>
+                        <li>Scroll to zoom in/out</li>
+                        <li>Double-click on a node to highlight connections</li>
+                        <li>Hover over nodes to see details</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="visualization">
+                <div id="graph-container"></div>
+                <div id="tooltip" class="tooltip"></div>
+                <div id="stats-panel" class="stats-panel hidden">
+                    <div>Nodes: <span id="node-count">0</span></div>
+                    <div>Links: <span id="link-count">0</span></div>
+                    <div>FPS: <span id="fps">0</span></div>
+                </div>
+                <div class="zoom-controls">
+                    <button id="zoom-in" class="zoom-button">+</button>
+                    <button id="zoom-out" class="zoom-button">-</button>
+                    <button id="zoom-fit" class="zoom-button">⟲</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loader"></div>
+    </div>
+    
+    <script>
+        // SVG Filter for glow effect
+        const svgNS = "http://www.w3.org/2000/svg";
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // Create the SVG element
+            const svg = d3.select("#graph-container")
+                .append("svg")
+                .attr("width", "100%")
+                .attr("height", "100%");
+            
+            // Define glow filter
+            const defs = svg.append("defs");
+            
+            const filter = defs.append("filter")
+                .attr("id", "glow")
+                .attr("x", "-50%")
+                .attr("y", "-50%")
+                .attr("width", "200%")
+                .attr("height", "200%");
+            
+            filter.append("feGaussianBlur")
+                .attr("stdDeviation", "2.5")
+                .attr("result", "coloredBlur");
+            
+            const feMerge = filter.append("feMerge");
+            feMerge.append("feMergeNode")
+                .attr("in", "coloredBlur");
+            feMerge.append("feMergeNode")
+                .attr("in", "SourceGraphic");
+            
+            // Define marker for arrows
+            defs.append("marker")
+                .attr("id", "arrowhead")
+                .attr("viewBox", "0 -5 10 10")
+                .attr("refX", 20)
+                .attr("refY", 0)
+                .attr("orient", "auto")
+                .attr("markerWidth", 6)
+                .attr("markerHeight", 6)
+                .append("path")
+                .attr("d", "M0,-5L10,0L0,5")
+                .attr("fill", "#999");
+            
+            // Add a group for graph elements
+            const g = svg.append("g");
+            
+            // Setup zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 10])
+                .on("zoom", (event) => {
+                    g.attr("transform", event.transform);
+                });
+            
+            svg.call(zoom);
+            
+            // Simulation setup
+            const simulation = d3.forceSimulation()
+                .force("link", d3.forceLink().id(d => d.id).distance(150).strength(0.5))
+                .force("charge", d3.forceManyBody().strength(-300))
+                .force("center", d3.forceCenter(window.innerWidth / 2, window.innerHeight / 2))
+                .force("collision", d3.forceCollide().radius(d => d.radius * 1.2))
+                .alphaTarget(0);
+            
+            // Color scales
+            const colorScales = {
+                default: d3.scaleOrdinal(d3.schemeCategory10),
+                pastel: d3.scaleOrdinal(["#FF9AA2", "#FFB7B2", "#FFDAC1", "#E2F0CB", "#B5EAD7", "#C7CEEA", "#F8C8DC"]),
+                vibrant: d3.scaleOrdinal(["#FF5733", "#C70039", "#900C3F", "#581845", "#2E86C1", "#17A589", "#D4AC0D"]),
+                monochrome: d3.scaleOrdinal(["#C0C0C0", "#A9A9A9", "#808080", "#696969", "#778899", "#708090", "#2F4F4F"])
+            };
+            
+            let currentColorScale = colorScales.default;
+            let nodes = [];
+            let links = [];
+            let nodeElements, linkElements, labelElements;
+            let tooltip = d3.select("#tooltip");
+            
+            // Control variables
+            let showLabels = true;
+            let useCurvedLinks = false;
+            let nodeSizeByConnections = true;
+            let useGlowEffect = true;
+            let colorBy = "type";
+            let animateLinks = true;
+            
+            // FPS counter
+            let frameCount = 0;
+            let lastTime = performance.now();
+            let fps = 0;
+            
+            function updateFPS() {
+                const now = performance.now();
+                const elapsed = now - lastTime;
+                
+                if (elapsed >= 1000) {
+                    fps = Math.round((frameCount * 1000) / elapsed);
+                    document.getElementById("fps").textContent = fps;
+                    frameCount = 0;
+                    lastTime = now;
+                }
+                
+                frameCount++;
+                requestAnimationFrame(updateFPS);
+            }
+            
+            updateFPS();
+            
+            // Update UI with simulation stats
+            function updateStats() {
+                document.getElementById("node-count").textContent = nodes.length;
+                document.getElementById("link-count").textContent = links.length;
+                d3.select("#stats-panel").classed("hidden", false);
+            }
+            
+            // Helper function to parse CSV or mock Parquet data
+            function parseData(file, callback) {
+                const reader = new FileReader();
+                
+                reader.onload = function(event) {
+                    const data = event.target.result;
+                    showLoading(true);
+                    
+                    // For now, we'll handle all files as CSV
+                    // In a real application, you'd use a Parquet parser library
+                    Papa.parse(data, {
+                        header: true,
+                        dynamicTyping: true,
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            // Process the data to create graph structure
+                            const graphData = processGraphData(results.data, file.name);
+                            showLoading(false);
+                            callback(graphData);
+                        },
+                        error: function(error) {
+                            console.error("Error parsing file:", error);
+                            showLoading(false);
+                            alert(`Error parsing file: ${error}`);
+                        }
+                    });
+                };
+                
+                reader.readAsText(file);
+            }
+            
+            // Process the parsed data to create graph structure
+            function processGraphData(data, filename) {
+                // This is a mock implementation - in a real app, you'd need to understand
+                // the specific structure of your GraphRAG Parquet files
+                
+                // Extract node and link information from the data
+                const newNodes = [];
+                const newLinks = [];
+                const nodeMap = new Map();
+                
+                // Generate some mock nodes and links based on data properties
+                const columns = Object.keys(data[0] || {});
+                
+                // Choose a couple of columns to use as node identifiers
+                const idColumn = columns[0] || "id";
+                const nameColumn = columns.find(c => c.toLowerCase().includes("name") || c.toLowerCase().includes("title")) || columns[1] || "name";
+                
+                // Process each row to create nodes
+                data.forEach((row, index) => {
+                    if (!row[idColumn]) return;
+                    
+                    const nodeId = `${filename}-${row[idColumn]}`;
+                    
+                    if (!nodeMap.has(nodeId)) {
+                        const nodeType = determineNodeType(row, filename);
+                        const nodeName = row[nameColumn] || `Node ${index + 1}`;
+                        
+                        const node = {
+                            id: nodeId,
+                            name: truncateText(String(nodeName), 20),
+                            type: nodeType,
+                            properties: { ...row },
+                            file: filename,
+                            cluster: Math.floor(Math.random() * 5) // Random cluster assignment for visualization
+                        };
+                        
+                        newNodes.push(node);
+                        nodeMap.set(nodeId, node);
+                    }
+                });
+                
+                // Create connections between nodes
+                // For demo purposes, we'll create some random connections
+                newNodes.forEach((node, i) => {
+                    // Connect to 1-3 other random nodes
+                    const numConnections = Math.floor(Math.random() * 3) + 1;
+                    
+                    for (let j = 0; j < numConnections; j++) {
+                        const targetIndex = Math.floor(Math.random() * newNodes.length);
+                        if (targetIndex !== i) {
+                            newLinks.push({
+                                source: node.id,
+                                target: newNodes[targetIndex].id,
+                                type: "related",
+                                weight: Math.random() * 0.5 + 0.5
+                            });
+                        }
+                    }
+                });
+                
+                return { nodes: newNodes, links: newLinks };
+            }
+            
+            // Determine node type based on data
+            function determineNodeType(row, filename) {
+                // In a real app, you'd analyze the row data to determine node type
+                // For demo, we'll create some mock types
+                
+                const types = ["Document", "Concept", "Entity", "Fact", "Query"];
+                
+                // Use filename to influence node type for more realistic clustering
+                const hash = hashString(filename);
+                const baseType = types[hash % types.length];
+                
+                // Add some variation within files
+                const rand = Math.random();
+                if (rand > 0.7) {
+                    const otherType = types[(hash + 1) % types.length];
+                    return otherType;
+                }
+                
+                return baseType;
+            }
+            
+            // Simple string hash function
+            function hashString(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                    hash = hash & hash;
+                }
+                return Math.abs(hash);
+            }
+            
+            // Truncate text with ellipsis
+            function truncateText(text, maxLength) {
+                return text.length > maxLength ? text.substr(0, maxLength) + '...' : text;
+            }
+            
+            // Update the graph with new data
+            function updateGraph() {
+                // Create curved link paths
+                const linkPath = useCurvedLinks ? 
+                    d => {
+                        const dx = d.target.x - d.source.x;
+                        const dy = d.target.y - d.source.y;
+                        const dr = Math.sqrt(dx * dx + dy * dy) * 1.5;
+                        return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+                    } : 
+                    d => `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`;
+                
+                // Clear existing elements
+                g.selectAll(".link").remove();
+                g.selectAll(".node").remove();
+                g.selectAll(".label").remove();
+                
+                // Create links
+                linkElements = g.selectAll(".link")
+                    .data(links)
+                    .enter()
+                    .append("path")
+                    .attr("class", "link")
+                    .attr("d", linkPath)
+                    .style("stroke-width", d => Math.sqrt(d.weight) * 2)
+                    .attr("marker-end", d => useCurvedLinks ? "" : "url(#arrowhead)");
+                
+                if (animateLinks) {
+                    // Add animated dash array for links
+                    linkElements
+                        .style("stroke-dasharray", "5,5")
+                        .style("stroke-dashoffset", 0)
+                        .transition()
+                        .duration(20000)
+                        .ease(d3.easeLinear)
+                        .style("stroke-dashoffset", 1000)
+                        .on("end", function() {
+                            d3.select(this)
+                                .transition()
+                                .duration(20000)
+                                .ease(d3.easeLinear)
+                                .style("stroke-dashoffset", 0)
+                                .on("end", function() {
+                                    // Repeat the animation
+                                    d3.select(this).call(repeat);
+                                });
+                        });
+                }
+                
+                function repeat(path) {
+                    path.transition()
+                        .duration(20000)
+                        .ease(d3.easeLinear)
+                        .style("stroke-dashoffset", 1000)
+                        .transition()
+                        .duration(20000)
+                        .ease(d3.easeLinear)
+                        .style("stroke-dashoffset", 0)
+                        .on("end", function() {
+                            d3.select(this).call(repeat);
+                        });
+                }
+                
+                // Create nodes
+                nodeElements = g.selectAll(".node")
+                    .data(nodes)
+                    .enter()
+                    .append("circle")
+                    .attr("class", "node")
+                    .attr("r", d => getNodeRadius(d))
+                    .style("fill", d => getNodeColor(d))
+                    .style("cursor", "pointer")
+                    .call(d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended))
+                    .on("mouseover", showTooltip)
+                    .on("mouseout", hideTooltip)
+                    .on("dblclick", highlightConnections);
+                
+                if (useGlowEffect) {
+                    nodeElements.classed("glow", true);
+                }
+                
+                // Create labels
+                if (showLabels) {
+                    labelElements = g.selectAll(".label")
+                        .data(nodes)
+                        .enter()
+                        .append("text")
+                        .attr("class", "label")
+                        .attr("text-anchor", "middle")
+                        .attr("dy", d => -getNodeRadius(d) - 5)
+                        .text(d => d.name)
+                        .style("fill", "#fff")
+                        .style("font-size", "10px")
+                        .style("pointer-events", "none")
+                        .style("text-shadow", "0 0 3px rgba(0,0,0,0.8)");
+                }
+                
+                // Update simulation
+                simulation.nodes(nodes)
+                    .force("link").links(links);
+                
+                simulation.alpha(1).restart();
+                
+                // Update stats
+                updateStats();
+            }
+            
+            // Get node radius based on connections
+            function getNodeRadius(node) {
+                if (!nodeSizeByConnections) return 10;
+                
+                const connectionCount = links.filter(
+                    link => link.source.id === node.id || link.target.id === node.id
+                ).length;
+                
+                return Math.max(5, Math.min(20, 5 + connectionCount * 2));
+            }
+            
+            // Get node color based on selected property
+            function getNodeColor(node) {
+                switch (colorBy) {
+                    case "type":
+                        return currentColorScale(node.type);
+                    case "cluster":
+                        return currentColorScale(node.cluster);
+                    case "random":
+                        return currentColorScale(node.id);
+                    default:
+                        return currentColorScale(node.type);
+                }
+            }
+            
+            // Show tooltip with node information
+            function showTooltip(event, d) {
+                const nodeProperties = Object.entries(d.properties)
+                    .filter(([key, value]) => value !== null && value !== undefined && key !== "id")
+                    .slice(0, 5) // Limit to first 5 properties
+                    .map(([key, value]) => `
+                        <div class="tooltip-field">
+                            <span class="tooltip-label">${key}:</span>
+                            <span>${value}</span>
+                        </div>
+                    `)
+                    .join("");
+                
+                tooltip.html(`
+                    <div class="tooltip-field">
+                        <span class="tooltip-label">ID:</span>
+                        <span>${d.id}</span>
+                    </div>
+                    <div class="tooltip-field">
+                        <span class="tooltip-label">Type:</span>
+                        <span>${d.type}</span>
+                    </div>
+                    <div class="tooltip-field">
+                        <span class="tooltip-label">File:</span>
+                        <span>${d.file}</span>
+                    </div>
+                    ${nodeProperties}
+                `)
+                .style("left", (event.pageX + 10) + "px")
+                .style("top", (event.pageY - 10) + "px")
+                .style("opacity", 1);
+                
+                // Highlight node
+                d3.select(event.currentTarget)
+                    .transition()
+                    .duration(200)
+                    .attr("r", d => getNodeRadius(d) * 1.2);
+            }
+            
+            // Hide tooltip
+            function hideTooltip(event, d) {
+                tooltip.style("opacity", 0);
+                
+                // Restore node size
+                d3.select(event.currentTarget)
+                    .transition()
+                    .duration(200)
+                    .attr("r", d => getNodeRadius(d));
+            }
+            
+            // Highlight connections on double-click
+            function highlightConnections(event, d) {
+                event.stopPropagation();
+                
+                // Find connected nodes and links
+                const connectedNodeIds = new Set();
+                connectedNodeIds.add(d.id);
+                
+                const connectedLinks = links.filter(link => {
+                    if (link.source.id === d.id || link.target.id === d.id) {
+                        connectedNodeIds.add(link.source.id);
+                        connectedNodeIds.add(link.target.id);
+                        return true;
+                    }
+                    return false;
+                });
+                
+                // Highlight nodes and links
+                nodeElements.classed("highlighted", false)
+                    .transition()
+                    .duration(300)
+                    .style("opacity", node => connectedNodeIds.has(node.id) ? 1 : 0.1);
+                
+                linkElements.classed("highlighted", false)
+                    .transition()
+                    .duration(300)
+                    .style("opacity", link => 
+                        connectedNodeIds.has(link.source.id) && connectedNodeIds.has(link.target.id) ? 1 : 0.1
+                    );
+                
+                // Add pulsating effect to clicked node
+                nodeElements.classed("pulsating", false);
+                
+                d3.select(event.currentTarget)
+                    .classed("pulsating", true)
+                    .transition()
+                    .duration(300)
+                    .attr("r", getNodeRadius(d) * 1.5)
+                    .transition()
+                    .duration(500)
+                    .attr("r", getNodeRadius(d))
+                    .on("end", function() {
+                        d3.select(this)
+                            .transition()
+                            .duration(300)
+                            .attr("r", getNodeRadius(d) * 1.5)
+                            .transition()
+                            .duration(500)
+                            .attr("r", getNodeRadius(d))
+                            .on("end", function() {
+                                d3.select(this).classed("pulsating", false);
+                            });
+                    });
+                
+                // Reset after 5 seconds
+                setTimeout(() => {
+                    nodeElements.transition().duration(500).style("opacity", 1);
+                    linkElements.transition().duration(500).style("opacity", 1);
+                    d3.select(event.currentTarget).classed("pulsating", false);
+                }, 5000);
+            }
+            
+            // Simulation event functions
+            function ticked() {
+                // Update link positions
+                linkElements
+                    .attr("d", useCurvedLinks ? 
+                        d => {
+                            const dx = d.target.x - d.source.x;
+                            const dy = d.target.y - d.source.y;
+                            const dr = Math.sqrt(dx * dx + dy * dy) * 1.5;
+                            return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+                        } : 
+                        d => `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`
+                    );
+                
+                // Update node positions
+                nodeElements
+                    .attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+                
+                // Update label positions
+                if (showLabels && labelElements) {
+                    labelElements
+                        .attr("x", d => d.x)
+                        .attr("y", d => d.y);
+                }
+            }
+            
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+            
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+            
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                // Uncomment below to make nodes stay where they're dragged
+                // d.fx = null;
+                // d.fy = null;
+            }
+            
+            // Reset view to fit all nodes
+            function resetView() {
+                if (nodes.length === 0) return;
+                
+                const bounds = calculateBounds(nodes);
+                const width = document.getElementById("graph-container").clientWidth;
+                const height = document.getElementById("graph-container").clientHeight;
+                
+                const dx = bounds.max.x - bounds.min.x;
+                const dy = bounds.max.y - bounds.min.y;
+                const x = (bounds.min.x + bounds.max.x) / 2;
+                const y = (bounds.min.y + bounds.max.y) / 2;
+                
+                const scale = 0.9 / Math.max(dx / width, dy / height);
+                const translate = [width / 2 - scale * x, height / 2 - scale * y];
+                
+                svg.transition()
+                    .duration(750)
+                    .call(
+                        zoom.transform,
+                        d3.zoomIdentity
+                            .translate(translate[0], translate[1])
+                            .scale(scale)
+                    );
+            }
+            
+            // Calculate bounds for all nodes
+            function calculateBounds(nodes) {
+                return {
+                    min: {
+                        x: d3.min(nodes, d => d.x - getNodeRadius(d)),
+                        y: d3.min(nodes, d => d.y - getNodeRadius(d))
+                    },
+                    max: {
+                        x: d3.max(nodes, d => d.x + getNodeRadius(d)),
+                        y: d3.max(nodes, d => d.y + getNodeRadius(d))
+                    }
+                };
+            }
+            
+            // Show/hide loading overlay
+            function showLoading(show) {
+                document.getElementById("loading-overlay").style.display = show ? "flex" : "none";
+            }
+            
+            // Export graph as SVG
+            function exportSVG() {
+                const svgElement = document.querySelector("#graph-container svg");
+                const svgData = new XMLSerializer().serializeToString(svgElement);
+                const svgBlob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
+                const svgUrl = URL.createObjectURL(svgBlob);
+                
+                const downloadLink = document.createElement("a");
+                downloadLink.href = svgUrl;
+                downloadLink.download = "graph_visualization.svg";
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            }
+            
+            // Setup event listeners
+            function setupEventListeners() {
+                // File input handler
+                document.getElementById("file-input").addEventListener("change", function(event) {
+                    const files = event.target.files;
+                    if (files.length === 0) return;
+                    
+                    // Check if this is the first file being loaded
+                    const isFirstFileLoad = document.getElementById("file-list").children.length === 0;
+                    
+                    // If this is the first file and we have demo data, ask if user wants to clear demo data
+                    const hasDemoData = nodes.some(node => node.id.startsWith('demo-'));
+                    if (isFirstFileLoad && hasDemoData && confirm("Do you want to clear the demo data before loading your files?")) {
+                        clearDemoData();
+                    }
+                
+                    // Process each file
+                    for (let i = 0; i < files.length; i++) {
+                        const file = files[i];
+                        
+                        // Add file to list
+                        const fileItem = document.createElement("div");
+                        fileItem.className = "file-item";
+                        fileItem.innerHTML = `
+                            <span class="file-name">${file.name}</span>
+                            <button class="file-remove" data-file-id="${i}">×</button>
+                        `;
+                        document.getElementById("file-list").appendChild(fileItem);
+                        
+                        // Parse file data
+                        parseData(file, (graphData) => {
+                            // Add new nodes and links
+                            const existingNodeIds = new Set(nodes.map(n => n.id));
+                            
+                            // Filter out duplicate nodes
+                            const newNodes = graphData.nodes.filter(n => !existingNodeIds.has(n.id));
+                            
+                            // Add new nodes and links to the existing data
+                            nodes = nodes.concat(newNodes);
+                            links = links.concat(graphData.links);
+                            
+                            // Update the graph
+                            updateGraph();
+                            
+                            // Reset view to show all nodes
+                            setTimeout(resetView, 100);
+                            
+                            // Start simulation
+                            simulation.on("tick", ticked);
+                        });
+                    }
+                });
+                
+                // Handle file removal
+                document.getElementById("file-list").addEventListener("click", function(event) {
+                    if (event.target.classList.contains("file-remove")) {
+                        const fileId = event.target.getAttribute("data-file-id");
+                        event.target.closest(".file-item").remove();
+                        
+                        // In a real app, you would remove the corresponding nodes and links
+                        // Here we'll just remove all nodes and links for simplicity
+                        if (document.getElementById("file-list").children.length === 0) {
+                            // If all files are removed, but don't remove demo data if it's still present
+                            const hasDemoData = nodes.some(node => node.id.startsWith('demo-'));
+                            
+                            if (!hasDemoData) {
+                                nodes = [];
+                                links = [];
+                                updateGraph();
+                            }
+                        }
+                        
+                        // Re-enable the clear demo button if it was disabled
+                        const hasDemoData = nodes.some(node => node.id.startsWith('demo-'));
+                        if (hasDemoData) {
+                            document.getElementById("clear-demo").disabled = false;
+                            document.getElementById("clear-demo").style.opacity = 1;
+                        }
+                    }
+                });
+                
+                // Control handlers
+                document.getElementById("link-distance").addEventListener("input", function(event) {
+                    const value = parseInt(event.target.value);
+                    document.getElementById("link-distance-value").textContent = value;
+                    simulation.force("link").distance(value);
+                    simulation.alpha(0.3).restart();
+                });
+                
+                document.getElementById("node-charge").addEventListener("input", function(event) {
+                    const value = parseInt(event.target.value);
+                    document.getElementById("node-charge-value").textContent = value;
+                    simulation.force("charge").strength(value);
+                    simulation.alpha(0.3).restart();
+                });
+                
+                document.getElementById("link-strength").addEventListener("input", function(event) {
+                    const value = parseFloat(event.target.value);
+                    document.getElementById("link-strength-value").textContent = value;
+                    simulation.force("link").strength(value);
+                    simulation.alpha(0.3).restart();
+                });
+                
+                document.getElementById("node-size-toggle").addEventListener("change", function(event) {
+                    nodeSizeByConnections = event.target.checked;
+                    document.getElementById("node-size-property").disabled = !nodeSizeByConnections;
+                    updateGraph();
+                });
+                
+                document.getElementById("color-by-toggle").addEventListener("change", function(event) {
+                    document.getElementById("color-by-property").disabled = !event.target.checked;
+                    updateGraph();
+                });
+                
+                document.getElementById("color-by-property").addEventListener("change", function(event) {
+                    colorBy = event.target.value;
+                    updateGraph();
+                });
+                
+                document.getElementById("show-labels-toggle").addEventListener("change", function(event) {
+                    showLabels = event.target.checked;
+                    updateGraph();
+                });
+                
+                document.getElementById("curved-links-toggle").addEventListener("change", function(event) {
+                    useCurvedLinks = event.target.checked;
+                    updateGraph();
+                });
+                
+                document.getElementById("link-animation-toggle").addEventListener("change", function(event) {
+                    animateLinks = event.target.checked;
+                    updateGraph();
+                });
+                
+                document.getElementById("glow-toggle").addEventListener("change", function(event) {
+                    useGlowEffect = event.target.checked;
+                    nodeElements.classed("glow", useGlowEffect);
+                });
+                
+                document.getElementById("color-palette").addEventListener("change", function(event) {
+                    const palette = event.target.value;
+                    currentColorScale = colorScales[palette];
+                    updateGraph();
+                });
+                
+                document.getElementById("bg-color").addEventListener("input", function(event) {
+                    const color = event.target.value;
+                    document.querySelector(".visualization").style.backgroundColor = color;
+                    document.querySelector(".color-label").textContent = color;
+                });
+                
+                document.getElementById("reset-view").addEventListener("click", resetView);
+                document.getElementById("export-svg").addEventListener("click", exportSVG);
+                document.getElementById("clear-demo").addEventListener("click", clearDemoData);
+                
+                // Zoom controls
+                document.getElementById("zoom-in").addEventListener("click", function() {
+                    svg.transition().duration(300).call(
+                        zoom.scaleBy, 1.3
+                    );
+                });
+                
+                document.getElementById("zoom-out").addEventListener("click", function() {
+                    svg.transition().duration(300).call(
+                        zoom.scaleBy, 0.7
+                    );
+                });
+                
+                document.getElementById("zoom-fit").addEventListener("click", resetView);
+                
+                // Sidebar toggle
+                document.getElementById("sidebar-toggle").addEventListener("click", function() {
+                    const sidebar = document.getElementById("sidebar");
+                    const sidebarToggle = document.getElementById("sidebar-toggle");
+                    
+                    sidebar.classList.toggle("collapsed");
+                    sidebarToggle.classList.toggle("collapsed");
+                });
+                
+                // Window resize handler
+                window.addEventListener("resize", function() {
+                    simulation.force("center", d3.forceCenter(
+                        document.getElementById("graph-container").clientWidth / 2,
+                        document.getElementById("graph-container").clientHeight / 2
+                    ));
+                    simulation.alpha(0.3).restart();
+                });
+                
+                // Double click on background resets highlighting
+                svg.on("dblclick", function() {
+                    nodeElements.transition().duration(500).style("opacity", 1);
+                    linkElements.transition().duration(500).style("opacity", 1);
+                    nodeElements.classed("pulsating", false);
+                });
+            }
+            
+            // Clear all demo data
+            function clearDemoData() {
+                // Clear nodes and links
+                nodes = [];
+                links = [];
+                
+                // Update the graph
+                updateGraph();
+                
+                // Add feedback message
+                const feedbackMessage = document.createElement("div");
+                feedbackMessage.className = "status-message";
+                feedbackMessage.textContent = "Demo data cleared. Please load your own Parquet files.";
+                document.querySelector(".visualization").appendChild(feedbackMessage);
+                
+                // Hide message after 3 seconds
+                setTimeout(() => {
+                    feedbackMessage.style.opacity = 0;
+                    setTimeout(() => feedbackMessage.remove(), 1000);
+                }, 3000);
+                
+                // Disable clear demo button if no more demo data
+                if (nodes.length === 0) {
+                    document.getElementById("clear-demo").disabled = true;
+                    document.getElementById("clear-demo").style.opacity = 0.5;
+                }
+            }
+            
+            // Create initial demo data
+            function createDemoData() {
+                // Create some demo nodes and links if no files are loaded
+                const demoTypes = ["Document", "Concept", "Entity", "Fact", "Query"];
+                const demoNodes = [];
+                const demoLinks = [];
+                
+                // Create 30 demo nodes
+                for (let i = 0; i < 30; i++) {
+                    demoNodes.push({
+                        id: `demo-${i}`,
+                        name: `Node ${i}`,
+                        type: demoTypes[i % demoTypes.length],
+                        properties: {
+                            value: Math.random() * 100,
+                            score: (Math.random() * 10).toFixed(2),
+                            timestamp: new Date().toISOString()
+                        },
+                        file: "demo-data.parquet",
+                        cluster: Math.floor(i / 6)
+                    });
+                }
+                
+                // Create links between nodes
+                for (let i = 0; i < demoNodes.length; i++) {
+                    // Each node connects to 2-4 other nodes
+                    const numLinks = Math.floor(Math.random() * 3) + 2;
+                    
+                    for (let j = 0; j < numLinks; j++) {
+                        let targetIndex;
+                        
+                        // Prefer connecting to nodes in the same cluster
+                        if (Math.random() < 0.7) {
+                            // Find nodes in the same cluster
+                            const sameClusterNodes = demoNodes.filter(
+                                (n, idx) => n.cluster === demoNodes[i].cluster && idx !== i
+                            );
+                            
+                            if (sameClusterNodes.length > 0) {
+                                targetIndex = demoNodes.indexOf(
+                                    sameClusterNodes[Math.floor(Math.random() * sameClusterNodes.length)]
+                                );
+                            } else {
+                                targetIndex = (i + 1 + Math.floor(Math.random() * (demoNodes.length - 1))) % demoNodes.length;
+                            }
+                        } else {
+                            // Random connection
+                            targetIndex = (i + 1 + Math.floor(Math.random() * (demoNodes.length - 1))) % demoNodes.length;
+                        }
+                        
+                        demoLinks.push({
+                            source: demoNodes[i].id,
+                            target: demoNodes[targetIndex].id,
+                            type: "related",
+                            weight: Math.random() * 0.5 + 0.5
+                        });
+                    }
+                }
+                
+                nodes = demoNodes;
+                links = demoLinks;
+                
+                updateGraph();
+                
+                // Start simulation
+                simulation.on("tick", ticked);
+                
+                // Reset view
+                setTimeout(resetView, 100);
+            }
+            
+            // Initialize the application
+            setupEventListeners();
+            createDemoData();
+            
+            // Display welcome message
+            const welcomeMessage = document.createElement("div");
+            welcomeMessage.className = "status-message";
+            welcomeMessage.textContent = "Welcome to GraphRAG Parquet Visualizer! Load your parquet files or explore the demo data.";
+            document.querySelector(".visualization").appendChild(welcomeMessage);
+            
+            // Hide message after 5 seconds
+            setTimeout(() => {
+                welcomeMessage.style.opacity = 0;
+                setTimeout(() => welcomeMessage.remove(), 1000);
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
