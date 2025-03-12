@@ -1,5 +1,5 @@
 # Parquet Visualizer 
-Simple parquet visualizer using html. Preferrably use artifacts folder to input parquet files, but you could easily browse your parquet files too.
+Simple parquet visualizer using html. Preferrably use artifacts folder to input parquet files, but you could easily browse your parquet files too. To remove demo data, click the "Clear Demo Data" at the bottom of the sidebar.
 
 ## Demo
 [![Try Now!](https://img.shields.io/badge/Try%20Now!-FFD700?style=for-the-badge)](https://husaynirfan1.github.io/simple-parquet-visualizer/visualizer.html)
